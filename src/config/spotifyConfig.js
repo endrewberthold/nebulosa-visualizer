@@ -10,7 +10,8 @@ const scopes = [
     'user-read-email',
     'user-read-private',
     'user-read-playback-state',
-    'user-modify-playback-state'
+    'user-modify-playback-state',
+    'user-read-currently-playing'
 ]
 
 export const spotifyConfig = {

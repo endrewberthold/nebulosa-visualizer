@@ -13,6 +13,7 @@ const PrivateRoute = ({ children }) => {
 
 // The main Visualizer Application (Placeholder for now)
 const VisualizerApp = () => {
+    const token = localStorage.getItem('spotify_access_token')
 
     const { player, isPaused, isActive, currentTrack, deviceId } = useSpotifyPlayer(token)
 

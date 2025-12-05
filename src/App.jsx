@@ -42,7 +42,7 @@ const VisualizerApp = () => {
                 <h1 className="text-3xl font-bold text-green-500">
                     Spotify Visualizer
                 </h1>
-                
+
                 {isActive ? (
                     <PlayerControls
                         currentTrack={currentTrack}

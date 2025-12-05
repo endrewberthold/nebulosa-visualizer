@@ -19,5 +19,5 @@ export const spotifyConfig = {
     redirectUri,
     scopes,
     // Helper to generate the login URL
-    authEndpoint: 'https://accounts.spotify.com/authorize',
+    authEndpoint: 'https://accounts.spotify.com',
 }

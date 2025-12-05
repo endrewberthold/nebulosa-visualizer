@@ -1,98 +1,201 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import Login from './components/Login'
-import Callback from './components/Callback'
-import { useSpotifyPlayer } from './hooks/useSpotifyPlayer'
-import PlayerControls from './components/PlayerControls'
-import { useEffect, useState } from 'react'
+// src/App.jsx
+import React, { useEffect, useState, createContext } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
+import LoginButton from './components/LoginButton';
+import CallbackPage from './pages/Callback';
 
-// Component to protect routes (only allows access if token exists)
-const PrivateRoute = ({ children }) => {
-    const token = localStorage.getItem('spotify_access_token')
-    return token ? children : <Navigate to="/login" />
-}
+// Fallback Visualizer caso você não tenha um componente ainda
+function FallbackVisualizer({ accessToken }) {
+    const [trackId, setTrackId] = useState('');
+    const [analysis, setAnalysis] = useState(null);
+    const [error, setError] = useState(null);
 
-// The main Visualizer Application (Placeholder for now)
-const VisualizerApp = () => {
-    const token = localStorage.getItem('spotify_access_token')
-
-    const { player, isPaused, isActive, currentTrack, deviceId } = useSpotifyPlayer(token)
-
-    const handleLogout = () => {
-        localStorage.clear()
-        window.location.href = '/login'
+    async function fetchAudioAnalysis(trackIdToFetch) {
+        if (!accessToken) return setError('No access token');
+        try {
+            setError(null);
+            const resp = await fetch(`https://api.spotify.com/v1/audio-analysis/${trackIdToFetch}`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+            const json = await resp.json();
+            setAnalysis(json);
+        } catch (err) {
+            console.error(err);
+            setError(err.message);
+        }
     }
 
-    const transferPlayback = async () => {
-        if(!deviceId) return;
-        await fetch('https://api.spotify.com/v1/me/player', {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                device_ids: [deviceId],
-                play: true,
-            })
-        })
-    }
     return (
-        <div className="w-full h-screen bg-neutral-900 text-white flex flex-col items-center justify-center gap-8 relative overflow-hidden">
+        <div style={{ padding: 20 }}>
+            <h2>Nebulosa — Visualizer (test stub)</h2>
+            <p>Cole um <b>trackId</b> (ex: 3n3Ppam7vgaVa1iaRUc9Lp) e pressione "Get Analysis".</p>
 
-            <div className="z-10 flex flex-col items-center gap-6">
-                <h1 className="text-3xl font-bold text-green-500">
-                    Spotify Visualizer
-                </h1>
-
-                {isActive ? (
-                    <PlayerControls
-                        currentTrack={currentTrack}
-                        isPaused={isPaused}
-                        player={player}
-                    />
-                ) : (
-                    <div className="flex flex-col items-center gap-4">
-                        <p className="text-neutral-400">Player is ready but not active.</p>
-                        {deviceId && (
-                            <button
-                                onClick={transferPlayback}
-                                className="px-6 py-2 bg-green-500 text-black font-bold rounded-full hover:scale-105 transition"
-                            >
-                                Transfer Playback Here
-                            </button>
-                        )}
-                    </div>
-                )}
-
-                <button
-                    onClick={handleLogout}
-                    className="mt-8 text-sm text-red-400 hover:text-red-300 underline cursor-pointer"
-                >
-                    Logout
+            <input
+                value={trackId}
+                onChange={(e) => setTrackId(e.target.value.trim())}
+                placeholder="track id"
+                style={{ padding: 8, width: 320 }}
+            />
+            <div style={{ marginTop: 8 }}>
+                <button onClick={() => fetchAudioAnalysis(trackId)} disabled={!trackId || !accessToken}>
+                    Get Analysis
                 </button>
             </div>
+
+            {error && <p style={{ color: 'crimson' }}>Error: {error}</p>}
+
+            {analysis && (
+                <div style={{ marginTop: 16 }}>
+                    <h3>Analysis summary</h3>
+                    <p>Beats: {analysis.beats?.length ?? 0} · Sections: {analysis.sections?.length ?? 0}</p>
+                    <details style={{ maxWidth: 800 }}>
+                        <summary>Raw analysis preview</summary>
+                        <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>
+              {JSON.stringify(
+                  {
+                      meta: { track: analysis.meta, bars: analysis.bars?.length, beats: analysis.beats?.length },
+                      sectionsSample: analysis.sections?.slice(0, 3),
+                      beatsSample: analysis.beats?.slice(0, 8)
+                  },
+                  null,
+                  2
+              )}
+            </pre>
+                    </details>
+                </div>
+            )}
         </div>
-    )
+    );
 }
 
-function App() {
+// Context to expose the access token across the app (optional)
+export const SpotifyContext = createContext({
+    accessToken: null,
+    setAccessToken: () => {}
+});
+
+export default function App() {
+    const [accessToken, setAccessToken] = useState(() => sessionStorage.getItem('spotify_access_token') || null);
+    const [refreshToken, setRefreshToken] = useState(() => sessionStorage.getItem('spotify_refresh_token') || null);
+    const [profile, setProfile] = useState(null);
+
+    useEffect(() => {
+        // keep sessionStorage in sync
+        if (accessToken) sessionStorage.setItem('spotify_access_token', accessToken);
+        else sessionStorage.removeItem('spotify_access_token');
+
+        if (refreshToken) sessionStorage.setItem('spotify_refresh_token', refreshToken);
+        else sessionStorage.removeItem('spotify_refresh_token');
+    }, [accessToken, refreshToken]);
+
+    useEffect(() => {
+        // If we have an access token, try to fetch the user's profile as a quick sanity check
+        async function fetchProfile() {
+            if (!accessToken) return setProfile(null);
+            try {
+                const resp = await fetch('https://api.spotify.com/v1/me', {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+                if (!resp.ok) {
+                    // token may have expired; we don't auto-refresh here, showing null profile is fine
+                    setProfile(null);
+                    return;
+                }
+                const json = await resp.json();
+                setProfile(json);
+            } catch (err) {
+                console.error('fetchProfile error', err);
+                setProfile(null);
+            }
+        }
+        fetchProfile();
+    }, [accessToken]);
+
+    // Simple sign out
+    const handleSignOut = () => {
+        setAccessToken(null);
+        setRefreshToken(null);
+        setProfile(null);
+        sessionStorage.removeItem('spotify_pkce_verifier');
+        sessionStorage.removeItem('spotify_access_token');
+        sessionStorage.removeItem('spotify_refresh_token');
+    };
+
     return (
-        <BrowserRouter>
-            <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/callback" element={<Callback />} />
+        <SpotifyContext.Provider value={{ accessToken, setAccessToken }}>
+            <Router>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderBottom: '1px solid #eee' }}>
+                    <div>
+                        <Link to="/" style={{ marginRight: 12, textDecoration: 'none', fontWeight: 700 }}>Nebulosa</Link>
+                        <Link to="/visualizer" style={{ marginRight: 12 }}>Visualizer</Link>
+                    </div>
+                    <div>
+                        {profile ? (
+                            <>
+                                <span style={{ marginRight: 12 }}>Olá, {profile.display_name ?? profile.id}</span>
+                                <button onClick={handleSignOut}>Sign out</button>
+                            </>
+                        ) : (
+                            <LoginButton />
+                        )}
+                    </div>
+                </div>
 
-                <Route
-                    path="/"
-                    element={
-                        <PrivateRoute>
-                            <VisualizerApp />
-                        </PrivateRoute>
-                    }
-                />
-            </Routes>
-        </BrowserRouter>
-    )
+                <Routes>
+                    <Route path="/Callback" element={<CallbackPage onTokens={(data) => {
+                        // callback.jsx should POST to /api/exchange and then call this with the returned tokens
+                        // We'll accept both forms: object or full response
+                        if (!data) return;
+                        const { access_token, refresh_token, expires_in } = data;
+                        if (access_token) setAccessToken(access_token);
+                        if (refresh_token) setRefreshToken(refresh_token);
+                        // redirect to visualizer after tokens set
+                        window.location.replace('/visualizer');
+                    }} />} />
+
+                    <Route path="/visualizer" element={
+                        accessToken ? (
+                            // If you have your own Visualizer component, replace FallbackVisualizer with it:
+                            // <Visualizer accessToken={accessToken} />
+                            <FallbackVisualizer accessToken={accessToken} />
+                        ) : (
+                            <Navigate to="/" replace />
+                        )
+                    } />
+
+                    <Route path="/" element={
+                        <div style={{ padding: 24 }}>
+                            <h1>Nebulosa Audio Visualizer</h1>
+                            <p>Conecte sua conta Spotify para testar o fluxo PKCE e buscar <i>audio-analysis</i>.</p>
+
+                            {!accessToken ? (
+                                <>
+                                    <p>Para começar: clique em <b>Conectar com Spotify</b>.</p>
+                                    <LoginButton />
+                                </>
+                            ) : (
+                                <>
+                                    <p>Conectado. Vá para <Link to="/visualizer">Visualizer</Link> para testar.</p>
+                                </>
+                            )}
+
+                            <hr style={{ margin: '24px 0' }} />
+
+                            <details>
+                                <summary>Debug (tokens/session)</summary>
+                                <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>
+{JSON.stringify({
+    accessToken: accessToken ? '***present***' : null,
+    refreshToken: refreshToken ? '***present***' : null,
+    profile: profile ? { id: profile.id, display_name: profile.display_name } : null
+}, null, 2)}
+                </pre>
+                            </details>
+                        </div>
+                    } />
+                </Routes>
+            </Router>
+        </SpotifyContext.Provider>
+    );
 }
-
-export default App

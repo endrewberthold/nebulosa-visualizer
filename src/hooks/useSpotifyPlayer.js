@@ -48,20 +48,13 @@ export const useSpotifyPlayer = (token) => {
                 setCurrentTrack(state.track_window.current_track)
                 setPaused(state.paused)
 
-                // If the player is connected and receiving state updates, it's active
                 newPlayer.getCurrentState().then((playerState) => {
                     setActive(!!playerState)
                 })
             })
-
-            // 4. Connect the player
             newPlayer.connect()
         }
-
-        // Cleanup script on unmount
         return () => {
-            // Note: Spotify SDK doesn't have a clean 'destroy' method exposed easily for React useEffect cleanup
-            // usually we just leave the script tag, but disconnect if possible.
             if (player) player.disconnect()
         }
     }, [token])
